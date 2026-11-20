@@ -60,6 +60,27 @@ export function verifySignedUserId(token: string | undefined): string | null {
   return userId;
 }
 
+async function withDbRetry<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (err) {
+    const code = (err as { code?: string })?.code;
+    const message = err instanceof Error ? err.message : "";
+    const isTransient =
+      code === "P1001" ||
+      code === "P1002" ||
+      code === "P1017" ||
+      /connection|timeout|closed|terminated/i.test(message);
+
+    if (!isTransient) {
+      throw err;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    return fn();
+  }
+}
+
 export async function getCurrentUser(
   db: PrismaClient = prisma
 ): Promise<UserSummary | null> {
@@ -70,15 +91,17 @@ export async function getCurrentUser(
     return null;
   }
 
-  const user = await db.user.findUnique({
-    where: { id: userId },
-    select: {
-      id: true,
-      name: true,
-      email: true,
-      avatarColor: true,
-    },
-  });
+  const user = await withDbRetry(() =>
+    db.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        avatarColor: true,
+      },
+    })
+  );
 
   return user;
 }
@@ -96,15 +119,17 @@ export async function requireCurrentUser(
 export async function getDemoUsers(
   db: PrismaClient = prisma
 ): Promise<UserSummary[]> {
-  return db.user.findMany({
-    select: {
-      id: true,
-      name: true,
-      email: true,
-      avatarColor: true,
-    },
-    orderBy: { email: "asc" },
-  });
+  return withDbRetry(() =>
+    db.user.findMany({
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        avatarColor: true,
+      },
+      orderBy: { email: "asc" },
+    })
+  );
 }
 
 export function buildSessionCookieOptions(req?: Request) {
