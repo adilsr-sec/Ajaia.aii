@@ -1,0 +1,15 @@
+node_modules/
+.next/
+build/
+dist/
+coverage/
+.DS_Store
+*.log
+*.db
+*.db-journal
+prisma/*.db
+prisma/*.db-journal
+.env*
+!.env.example
+.neon
+tsconfig.tsbuildinfo

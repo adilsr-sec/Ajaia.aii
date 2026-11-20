@@ -1,0 +1,6 @@
+{
+  "name": "Ajaia Docs",
+  "description": "Lightweight collaborative document editor with rich-text formatting, Markdown/text import, and role-based document sharing.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
