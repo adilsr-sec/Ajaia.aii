@@ -149,3 +149,31 @@ body {
   pointer-events: none;
   height: 0;
 }
+
+@media print {
+  @page {
+    margin: 0.75in;
+  }
+
+  body {
+    background-color: #ffffff !important;
+    color: #0f172a !important;
+  }
+
+  .ajaia-editor {
+    min-height: auto !important;
+    font-size: 11pt;
+    line-height: 1.55;
+  }
+
+  .ajaia-editor h1,
+  .ajaia-editor h2,
+  .ajaia-editor h3 {
+    break-after: avoid;
+  }
+
+  .ajaia-editor pre,
+  .ajaia-editor blockquote {
+    break-inside: avoid;
+  }
+}

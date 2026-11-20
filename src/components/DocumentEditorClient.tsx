@@ -10,10 +10,14 @@ import {
   ArrowLeft,
   Bold,
   Check,
+  ChevronDown,
+  Download,
   Eye,
+  FileCode2,
   Italic,
   List,
   ListOrdered,
+  Printer,
   Redo2,
   Save,
   Share2,
@@ -48,6 +52,9 @@ export function DocumentEditorClient({
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("saved");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const [exportingMd, setExportingMd] = useState(false);
+  const exportMenuRef = useRef<HTMLDivElement>(null);
 
   // Track toolbar re-renders whenever cursor selection or formatting changes
   const [, setToolbarTick] = useState(0);
@@ -227,6 +234,69 @@ export function DocumentEditorClient({
     }
   }
 
+  useEffect(() => {
+    if (!exportMenuOpen) return;
+    function handleOutside(event: MouseEvent) {
+      if (
+        exportMenuRef.current &&
+        !exportMenuRef.current.contains(event.target as Node)
+      ) {
+        setExportMenuOpen(false);
+      }
+    }
+    function handleEsc(event: KeyboardEvent) {
+      if (event.key === "Escape") setExportMenuOpen(false);
+    }
+    document.addEventListener("mousedown", handleOutside);
+    document.addEventListener("keydown", handleEsc);
+    return () => {
+      document.removeEventListener("mousedown", handleOutside);
+      document.removeEventListener("keydown", handleEsc);
+    };
+  }, [exportMenuOpen]);
+
+  async function handleExportMarkdown() {
+    setExportMenuOpen(false);
+    setExportingMd(true);
+    setErrorMessage(null);
+    try {
+      if (doc.canEdit && isDirtyRef.current) {
+        const saved = await handleSave();
+        if (!saved) return;
+      }
+
+      const res = await fetch(`/api/documents/${doc.id}/export?format=md`);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setErrorMessage(data.error || "Failed to export document as Markdown.");
+        return;
+      }
+
+      const blob = await res.blob();
+      const disposition = res.headers.get("Content-Disposition") || "";
+      const match = disposition.match(/filename="([^"]+)"/);
+      const filename = match?.[1] || `${title.trim() || doc.title || "document"}.md`;
+
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch {
+      setErrorMessage("Network error while exporting Markdown.");
+    } finally {
+      setExportingMd(false);
+    }
+  }
+
+  function handleExportPdf() {
+    setExportMenuOpen(false);
+    window.print();
+  }
+
   const toolbarBtnClass = (active: boolean) =>
     `inline-flex h-8 min-w-8 items-center justify-center rounded-md px-2 text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
       active
@@ -243,9 +313,9 @@ export function DocumentEditorClient({
         : "paragraph";
 
   return (
-    <div className="min-h-screen bg-[#f8fafc] flex flex-col">
+    <div className="min-h-screen bg-[#f8fafc] print:bg-white flex flex-col">
       {/* Top Header */}
-      <header className="sticky top-0 z-30 border-b border-slate-200 bg-white">
+      <header className="sticky top-0 z-30 border-b border-slate-200 bg-white print:hidden">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-3 px-4 sm:px-6">
           <div className="flex items-center gap-3 min-w-0 flex-1">
             <button
@@ -320,6 +390,60 @@ export function DocumentEditorClient({
               </button>
             )}
 
+            {/* Export Dropdown (available to Owner, Editor, and Viewer) */}
+            <div ref={exportMenuRef} className="relative">
+              <button
+                type="button"
+                onClick={() => setExportMenuOpen((prev) => !prev)}
+                disabled={exportingMd}
+                aria-expanded={exportMenuOpen}
+                aria-haspopup="menu"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs sm:text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 hover:text-slate-900 disabled:opacity-50 whitespace-nowrap"
+              >
+                <Download className="h-3.5 w-3.5 text-slate-500" />
+                <span className="hidden sm:inline">
+                  {exportingMd ? "Exporting..." : "Export"}
+                </span>
+                <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
+              </button>
+
+              {exportMenuOpen && (
+                <div
+                  role="menu"
+                  className="absolute right-0 mt-1.5 w-52 rounded-xl border border-slate-200 bg-white py-1.5 shadow-lg z-50"
+                >
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => void handleExportMarkdown()}
+                    className="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-xs font-medium text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition-colors"
+                  >
+                    <FileCode2 className="h-4 w-4 text-slate-500 shrink-0" />
+                    <div>
+                      <p className="text-slate-900">Markdown (.md)</p>
+                      <p className="text-[11px] font-normal text-slate-500">
+                        Download formatted file
+                      </p>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={handleExportPdf}
+                    className="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-xs font-medium text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition-colors"
+                  >
+                    <Printer className="h-4 w-4 text-slate-500 shrink-0" />
+                    <div>
+                      <p className="text-slate-900">PDF / Print</p>
+                      <p className="text-[11px] font-normal text-slate-500">
+                        Print-ready document layout
+                      </p>
+                    </div>
+                  </button>
+                </div>
+              )}
+            </div>
+
             {doc.isOwner ? (
               <button
                 type="button"
@@ -362,7 +486,7 @@ export function DocumentEditorClient({
 
       {/* Sticky Formatting Toolbar (hidden in VIEWER mode) */}
       {doc.canEdit && (
-        <div className="sticky top-16 z-20 border-b border-slate-200 bg-white/95 backdrop-blur-xs">
+        <div className="sticky top-16 z-20 border-b border-slate-200 bg-white/95 backdrop-blur-xs print:hidden">
           <div className="mx-auto flex max-w-6xl items-center gap-1 overflow-x-auto px-4 sm:px-6 py-2">
             {/* Heading / Text Style Selector */}
             <div className="flex items-center gap-1 pr-2 border-r border-slate-200">
@@ -546,7 +670,7 @@ export function DocumentEditorClient({
       )}
 
       {!doc.canEdit && (
-        <div className="mx-auto w-full max-w-[816px] px-4 pt-5">
+        <div className="mx-auto w-full max-w-[816px] px-4 pt-5 print:hidden">
           <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-xs text-slate-600">
             <span>
               You are viewing a read-only document owned by{" "}
@@ -561,8 +685,13 @@ export function DocumentEditorClient({
       )}
 
       {/* White Document Page Surface */}
-      <main className="flex-1 px-4 py-6 sm:py-8">
-        <div className="mx-auto max-w-[816px] rounded-xl border border-slate-200 bg-white px-7 py-10 sm:px-14 sm:py-14 shadow-xs">
+      <main className="flex-1 px-4 py-6 sm:py-8 print:p-0">
+        <div className="mx-auto max-w-[816px] rounded-xl border border-slate-200 bg-white px-7 py-10 sm:px-14 sm:py-14 shadow-xs print:max-w-none print:rounded-none print:border-none print:shadow-none print:p-0">
+          <div className="hidden print:block mb-6 pb-3 border-b border-slate-200">
+            <p className="text-xs text-slate-500">
+              {title.trim() || doc.title} · Owned by {doc.owner.name}
+            </p>
+          </div>
           {editor ? (
             <EditorContent editor={editor} />
           ) : (
@@ -574,7 +703,7 @@ export function DocumentEditorClient({
           )}
         </div>
 
-        <div className="mx-auto mt-4 flex max-w-[816px] items-center justify-between px-1 text-xs text-slate-500">
+        <div className="mx-auto mt-4 flex max-w-[816px] items-center justify-between px-1 text-xs text-slate-500 print:hidden">
           <span>Owner: {doc.owner.name}</span>
           <span>
             {doc.canEdit ? "Press Cmd/Ctrl + S to save" : "Read-only access"}

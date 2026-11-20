@@ -14,6 +14,7 @@ import {
   upsertDocumentShare,
 } from "@/lib/documents";
 import { ServiceError } from "@/lib/errors";
+import { exportDocumentAsMarkdown } from "@/lib/exporter";
 import { importDocumentFromFile, MAX_IMPORT_FILE_SIZE } from "@/lib/importer";
 
 const TEST_SCHEMA = "vitest_isolated";
@@ -370,5 +371,53 @@ describe("Sharing and access control", () => {
     const deleted = await deleteDocument(aliceId, doc.id, db);
     expect(deleted.deleted).toBe(true);
     await expectServiceError(getDocumentById(aliceId, doc.id, db), 404);
+  });
+});
+
+describe("Markdown export", () => {
+  it("exports rich-text documents to clean Markdown and enforces read access control", async () => {
+    const doc = await createDocument(
+      aliceId,
+      {
+        title: "Release Summary",
+        contentHtml: [
+          "<h1>Release Summary</h1>",
+          "<p>Includes <strong>bold</strong>, <em>italic</em>, <u>underline</u>, and <code>inline</code>.</p>",
+          "<h2>Highlights</h2>",
+          "<ul><li><p>First bullet</p></li><li><p>Second bullet</p></li></ul>",
+          "<ol><li><p>Step one</p></li><li><p>Step two</p></li></ol>",
+        ].join(""),
+      },
+      db
+    );
+
+    // Owner can export
+    const ownerExport = await exportDocumentAsMarkdown(aliceId, doc.id, db);
+    expect(ownerExport.filename).toBe("Release Summary.md");
+    expect(ownerExport.markdown).toContain("# Release Summary");
+    expect(ownerExport.markdown).toContain("**bold**");
+    expect(ownerExport.markdown).toContain("*italic*");
+    expect(ownerExport.markdown).toContain("<u>underline</u>");
+    expect(ownerExport.markdown).toContain("`inline`");
+    expect(ownerExport.markdown).toContain("## Highlights");
+    expect(ownerExport.markdown).toContain("- First bullet");
+    expect(ownerExport.markdown).toContain("1. Step one");
+    expect(ownerExport.markdown).toContain("2. Step two");
+
+    // Unshared user (Charlie) is blocked with 403
+    await expectServiceError(
+      exportDocumentAsMarkdown(charlieId, doc.id, db),
+      403
+    );
+
+    // Once shared as VIEWER, Charlie can export
+    await upsertDocumentShare(
+      aliceId,
+      doc.id,
+      { email: "charlie@ajaia.demo", role: "VIEWER" },
+      db
+    );
+    const viewerExport = await exportDocumentAsMarkdown(charlieId, doc.id, db);
+    expect(viewerExport.markdown).toContain("# Release Summary");
   });
 });
